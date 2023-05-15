@@ -5,8 +5,6 @@ import { useEffect, useRef, useState } from 'react'
 import type { Options, RecordRTCPromisesHandler } from 'recordrtc'
 import {
   defaultStopTimeout,
-  ffmpegCoreUrl,
-  silenceRemoveCommand,
   whisperApiEndpoint,
 } from './configs'
 import {
@@ -74,6 +72,7 @@ export const useWhisper: UseWhisperHook = (config) => {
     throw new Error('apiKey is required if onTranscribe is not provided')
   }
 
+  const endpoint = config?.whisperConfig?.endpoint ?? whisperApiEndpoint
   const chunks = useRef<Blob[]>([])
   const listener = useRef<Harker>()
   const recorder = useRef<RecordRTCPromisesHandler>()
@@ -320,6 +319,7 @@ export const useWhisper: UseWhisperHook = (config) => {
    */
   const onStopStreaming = () => {
     if (listener.current) {
+      setSpeaking(false)
       // @ts-ignore
       listener.current.off('speaking', onStartSpeaking)
       // @ts-ignore
@@ -344,11 +344,10 @@ export const useWhisper: UseWhisperHook = (config) => {
   }
 
   /**
-   * start Whisper transcrition event
+   * start Whisper transcription event
    * - make sure recorder state is stopped
    * - set transcribing state to true
    * - get audio blob from recordrtc
-   * - if config.removeSilence is true, load ffmpeg-wasp and try to remove silence from speec
    * - if config.customServer is true, send audio data to custom server in base64 string
    * - if config.customServer is false, send audio data to Whisper api in multipart/form-data
    * - set transcript object with audio blob and transcription result from Whisper
@@ -362,46 +361,6 @@ export const useWhisper: UseWhisperHook = (config) => {
         if (recordState === 'stopped') {
           setTranscribing(true)
           let blob = await recorder.current.getBlob()
-          if (removeSilence) {
-            const { createFFmpeg } = await import('@ffmpeg/ffmpeg')
-            const ffmpeg = createFFmpeg({
-              mainName: 'main',
-              corePath: ffmpegCoreUrl,
-              log: true,
-            })
-            if (!ffmpeg.isLoaded()) {
-              await ffmpeg.load()
-            }
-            const buffer = await blob.arrayBuffer()
-            console.log({ in: buffer.byteLength })
-            ffmpeg.FS('writeFile', 'speech.webm', new Uint8Array(buffer))
-            await ffmpeg.run(
-              '-i', // Input
-              'speech.webm',
-              '-acodec', // Audio codec
-              'libmp3lame',
-              '-aq', // Audio quality
-              '6',
-              '-ar', // Audio sample rate
-              '44100',
-              '-af', // Audio filter = remove silence from start to end with 2 seconds in between
-              silenceRemoveCommand,
-              'speech.mp3' // Output
-            )
-            const out = ffmpeg.FS('readFile', 'speech.mp3')
-            console.log({ out: out.buffer.byteLength })
-            // 225 seems to be empty mp3 file
-            if (out.length <= 225) {
-              ffmpeg.exit()
-              setTranscript({
-                blob,
-              })
-              setTranscribing(false)
-              return
-            }
-            blob = new Blob([out.buffer], { type: 'audio/mpeg' })
-            ffmpeg.exit()
-          }
           if (typeof onTranscribeCallback === 'function') {
             const transcribed = await onTranscribeCallback(blob)
             console.log('onTranscribe', transcribed)
@@ -493,12 +452,12 @@ export const useWhisper: UseWhisperHook = (config) => {
         headers['Authorization'] = `Bearer ${apiKey}`
       }
       const { default: axios } = await import('axios')
-      const response = await axios.post(whisperApiEndpoint + mode, body, {
+      const response = await axios.post(endpoint + mode, body, {
         headers,
       })
       return response.data.text
     },
-    [apiKey, mode, whisperConfig]
+    [apiKey, mode, endpoint]
   )
 
   return {
