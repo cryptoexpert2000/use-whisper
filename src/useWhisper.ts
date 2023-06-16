@@ -364,7 +364,7 @@ export const useWhisper: UseWhisperHook = (config) => {
           if (typeof onTranscribeCallback === 'function') {
             const transcribed = await onTranscribeCallback(blob)
             console.log('onTranscribe', transcribed)
-            setTranscript(transcribed)
+            //setTranscript(transcribed) //disable changing the transcript with onTranscribe
           } else {
             let file = new File([blob], 'speech.webm', {
               type: 'audio/webm;codecs=opus',
